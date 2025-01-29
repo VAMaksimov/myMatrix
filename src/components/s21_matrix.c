@@ -209,11 +209,10 @@ int s21_calc_complements(matrix_t *A, matrix_t *result) {
   return resulting_code;
 }
 
-int matrix_minor(matrix_t *A, matrix_t *minor, int i, int j) {
+int matrix_minor(matrix_t *A, matrix_t *minor, const int i, const int j) {
   if (A == NULL || minor == NULL) return ERROR_INCORRECT_MATRIX;
 
   int resulting_code = OK;
-  resulting_code = s21_create_matrix(A->rows - 1, A->columns - 1, minor);
   if (resulting_code == OK) {
     for (int k = 0; k < A->rows - 1; k++) {
       for (int l = 0; l < A->columns - 1; l++) {
@@ -240,9 +239,27 @@ int s21_determinant(matrix_t *A, double *result) {
   if (A->rows != A->columns) return CALCULATION_ERROR;
 
   int resulting_code = OK;
-  double determinant = 1;
   matrix_t temp;
   s21_create_matrix(A->rows, A->columns, &temp);
+  if (resulting_code == OK) resulting_code = triangulation_in_place(&temp);
+  if (resulting_code == OK)
+    resulting_code = product_of_diagonal(&temp, &result);
+
+  s21_remove_matrix(&temp);
+  return resulting_code;
+}
+
+int product_of_diagonal(matrix_t *A, double *result) {
+  if (A == NULL || result == NULL) return ERROR_INCORRECT_MATRIX;
+  if (A->rows != A->columns) return CALCULATION_ERROR;
+
+  int resulting_code = OK;
+  *result = 1;
+  for (int i = 0; i < A->rows && resulting_code == OK; i++) {
+    *result *= A->matrix[i][i];
+    if (isinf(*result)) resulting_code = CALCULATION_ERROR;
+  }
+  return resulting_code;
 }
 
 /**
@@ -257,23 +274,23 @@ int s21_determinant(matrix_t *A, double *result) {
  * {4, 5, 6},
  * {7, 8, 9}}
  *
- * 0th column: j = 1; i = 0 => {4 - 10 * 4/10, 5 - 10 * 4/10, 6 - 10 * 4/10} =
- * {0, 1, 2}
- * j = 2; i = 0 => {7 - 10 * 7/10, 8 - 10 * 7/10, 9 - 10 * 7/10} =
- * {0, 1, 2}
+ * 0th column: j = 1; i = 0 => {4 - 10 * 4/10, 5 - 2 * 4/10, 6 - 3 * 4/10} =
+ * {0, 4.2, 4.8}
+ * j = 2; i = 0 => {7 - 10 * 7/10, 8 - 2 * 7/10, 9 - 3 * 7/10} =
+ * {0, 6.6, 6.9}
  *
  * {{10, 2, 3},
- * {0, 1, 2},
- * {0, 1, 2}}
+ * {0, 4.2, 4.8},
+ * {0, 6.6, 6.9}}
  *
- * 1st column: j = 2; i = 1 => {0 - 0 * 1/1, 1 - 1 * 1/1, 2 - 2 * 1/1} =
- * {0, 0, 0}
+ * 1st column: j = 2; i = 1 => {0 - 0 * 6.6/4.2, 6.6 - 4.2 * 6.6/4.2, 6.9 - 4.8
+ * * 6.6/4.2}
  *
  * {{10, 2, 3},
- * {0, 1, 2},
- * {0, 0, 0}}
+ * {0, 4.2, 4.8},
+ * {0, 0, 7.54}}
  *
- * Then, the determinant equals 10 * 1 * 0 = 0
+ * Then, the determinant equals 10 * 4.2 * 7.54 = 0
  *
  * When performing such an operation, division by
  * zero may occur if the element on the main diagonal is equal to zero - in this
@@ -292,29 +309,68 @@ int triangulation_in_place(matrix_t *A) {
   if (A == NULL) return ERROR_INCORRECT_MATRIX;
 
   int resulting_code = OK;
-  for (int i = 0; i < A->rows && resulting_code == OK; i++) {
+  for (int i = 0; i < A->columns && resulting_code == OK; i++) {
     permutation_of_rows_in_place(A, i);
-    for (int j = i + 1; j < A->columns && resulting_code == OK; j++) {
-      double multiplier = A->matrix[j][i] / A->matrix[i][i];
-      if (isinf(multiplier)) {
-        permutation_of_rows_in_place(A, i);
-      }
-      for (int k = i; k < A->columns && resulting_code == OK; k++) {
-        A->matrix[j][k] -= multiplier * A->matrix[i][k];
-      }
-    }
+    null_out_column(A, i, &resulting_code);
   }
   return resulting_code;
 }
 
 /**
- * @brief Permutates the i-th row with the row that has the maximum element
- * in the i-th column.
+ * @brief
+ * @note A matrix A to the power of -1 is called the inverse of a square matrix
+ * A if the product of these matrices equals the identity matrix.
+ *
+ * If the determinant of the matrix is zero, then it does not have an inverse.
+ *
+ * The formula to calculate the inverse of matrix is A^(-1) = (adj(A))^T /
+ * det(A)
  */
-void permutation_of_rows_in_place(matrix_t *A, int i) {
+int s21_inverse_matrix(matrix_t *A, matrix_t *result) {
+  if (A == NULL || result == NULL) return ERROR_INCORRECT_MATRIX;
+  if (A->rows != A->columns) return CALCULATION_ERROR;
+
+  int resulting_code = OK;
+  double determinant = 0;
+  if (A->rows == 1) {
+    result->matrix[0][0] = 1 / A->matrix[0][0];
+  } else {
+    matrix_t adj_matrix;
+    resulting_code = s21_create_matrix(A->rows, A->columns, &adj_matrix);
+    resulting_code = s21_calc_complements(A, &adj_matrix);
+    if (resulting_code == OK) {
+      resulting_code = s21_transpose_matrix(&adj_matrix, result);
+    }
+    if (resulting_code == OK) {
+      resulting_code = s21_determinant(A, &determinant);
+    }
+    if (resulting_code == OK) {
+      resulting_code = s21_mult_number(result, 1 / determinant, &adj_matrix);
+      *result = adj_matrix;
+    }
+    s21_remove_matrix(&adj_matrix);
+  }
+  return resulting_code;
+}
+
+void null_out_column(matrix_t *A, const int i, int *resulting_code) {
+  for (int j = i + 1; j < A->rows && *resulting_code == OK; j++) {
+    double multiplier = A->matrix[j][i] / A->matrix[i][i];
+    for (int k = i; k < A->columns && *resulting_code == OK; k++) {
+      A->matrix[j][k] -= multiplier * A->matrix[i][k];
+      if (isinf(A->matrix[j][k])) *resulting_code = CALCULATION_ERROR;
+    }
+  }
+}
+
+/**
+ * @brief Permutates the i-th row with the row in the range(i + 1, n) that has
+ * the maximum element in the i-th column.
+ */
+void permutation_of_rows_in_place(matrix_t *A, const int i) {
   int max_index = i;
   double max_element = A->matrix[i][i];
-  for (int j = i + 1; j < A->columns; j++) {
+  for (int j = i + 1; j < A->rows; j++) {
     if (A->matrix[j][i] > max_element) {
       max_element = A->matrix[j][i];
       max_index = j;
