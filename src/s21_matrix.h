@@ -1,16 +1,19 @@
 #ifndef S21_MATRIX_H
 #define S21_MATRIX_H
 
+#include <math.h>
+
 #define bool _Bool
 #define true 1
 #define false 0
 #define NOT(x) !x
 
-#include <math.h>
-
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
+
+#define _maximum_fault 1e-7
+#define fabs(x) (x < 0 ? -x : x)
 
 #define OK 0
 #define ERROR_INCORRECT_MATRIX 1

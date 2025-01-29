@@ -39,6 +39,8 @@ void s21_remove_matrix(matrix_t *A) {
 /**
  * @brief Checks if matrices are equal
  *
+ * @note
+ *
  * @param A First matrix
  * @param B Second matrix
  *
@@ -51,7 +53,8 @@ int s21_eq_matrix(matrix_t *A, matrix_t *B) {
   int resulting_code = SUCCESS;
   for (int i = 0; i < A->rows && resulting_code == SUCCESS; i++) {
     for (int j = 0; j < A->columns && resulting_code == SUCCESS; j++) {
-      if (A->matrix[i][j] != B->matrix[i][j]) resulting_code = FAILURE;
+      if (fabs(A->matrix[i][j] - B->matrix[i][j]) >= _maximum_fault)
+        resulting_code = FAILURE;
     }
   }
   return resulting_code;
@@ -62,9 +65,14 @@ int s21_sum_matrix(matrix_t *A, matrix_t *B, matrix_t *result) {
   if (NOT(matrices_are_the_same_size(A, B))) return CALCULATION_ERROR;
 
   int resulting_code = OK;
+  null_out_matrix(result);
   for (int i = 0; i < A->rows && resulting_code == OK; i++) {
     for (int j = 0; j < A->columns && resulting_code == OK; j++) {
-      result->matrix[i][j] = A->matrix[i][j] + B->matrix[i][j];
+      double sum = A->matrix[i][j] + B->matrix[i][j];
+      if (isinf(sum))
+        resulting_code = CALCULATION_ERROR;
+      else
+        result->matrix[i][j] = sum;
     }
   }
   return resulting_code;
@@ -75,9 +83,14 @@ int s21_sub_matrix(matrix_t *A, matrix_t *B, matrix_t *result) {
   if (NOT(matrices_are_the_same_size(A, B))) return CALCULATION_ERROR;
 
   int resulting_code = OK;
+  null_out_matrix(result);
   for (int i = 0; i < A->rows && resulting_code == OK; i++) {
     for (int j = 0; j < A->columns && resulting_code == OK; j++) {
-      result->matrix[i][j] = A->matrix[i][j] - B->matrix[i][j];
+      double sub = A->matrix[i][j] - B->matrix[i][j];
+      if (isinf(sub))
+        resulting_code = CALCULATION_ERROR;
+      else
+        result->matrix[i][j] = sub;
     }
   }
   return resulting_code;
@@ -97,9 +110,14 @@ int s21_mult_number(matrix_t *A, double number, matrix_t *result) {
   if (A == NULL || result == NULL) return ERROR_INCORRECT_MATRIX;
 
   int resulting_code = OK;
+  null_out_matrix(result);
   for (int i = 0; i < A->rows && resulting_code == OK; i++) {
     for (int j = 0; j < A->columns && resulting_code == OK; j++) {
-      result->matrix[i][j] = A->matrix[i][j] * number;
+      double product = A->matrix[i][j] * number;
+      if (isinf(product))
+        resulting_code = CALCULATION_ERROR;
+      else
+        result->matrix[i][j] = product;
     }
   }
   return resulting_code;
@@ -121,11 +139,13 @@ int s21_mult_matrix(matrix_t *A, matrix_t *B, matrix_t *result) {
   if (A->columns != B->rows) return CALCULATION_ERROR;
 
   int resulting_code = OK;
+  null_out_matrix(result);
   for (int i = 0; i < A->rows && resulting_code == OK; i++) {
     for (int j = 0; j < B->columns && resulting_code == OK; j++) {
       result->matrix[i][j] = 0;
       for (int k = 0; k < A->columns && resulting_code == OK; k++) {
         result->matrix[i][j] += A->matrix[i][k] * B->matrix[k][j];
+        if (isinf(result->matrix[i][j])) resulting_code = CALCULATION_ERROR;
       }
     }
   }
@@ -136,6 +156,7 @@ int s21_transpose(matrix_t *A, matrix_t *result) {
   if (A == NULL || result == NULL) return ERROR_INCORRECT_MATRIX;
 
   int resulting_code = OK;
+  null_out_matrix(result);
   for (int i = 0; i < A->rows && resulting_code == OK; i++) {
     for (int j = 0; j < A->columns && resulting_code == OK; j++) {
       result->matrix[j][i] = A->matrix[i][j];
@@ -145,7 +166,7 @@ int s21_transpose(matrix_t *A, matrix_t *result) {
 }
 
 /**
- * @brief Calculates the determinant of a matrix
+ * @brief Calculates the determinant of a matrix into the result
  *
  * @note Minor M(i,j) is a (n-1)-order determinant obtained by deleting out the
  * i-th row and the j-th column from the matrix A.\
@@ -164,11 +185,12 @@ int s21_calc_complements(matrix_t *A, matrix_t *result) {
 
   int resulting_code = OK;
   double determinant = 0;
+  null_out_matrix(result);
   for (int i = 0; i < A->rows && resulting_code == OK; i++) {
     for (int j = 0; j < A->columns && resulting_code == OK; j++) {
       matrix_t minor;
       resulting_code = s21_create_matrix(A->rows, A->columns, &minor);
-      minor = matrix_minor(A, i, j);
+      resulting_code = matrix_minor(A, &minor, i, j);
       result->matrix[i][j] =
           s21_determinant(&minor, &determinant) * pow(-1, i + j);
       s21_remove_matrix(&minor);
@@ -177,47 +199,25 @@ int s21_calc_complements(matrix_t *A, matrix_t *result) {
   return resulting_code;
 }
 
-matrix_t matrix_minor(matrix_t *A, int i, int j) {
-  matrix_t minor;
-  s21_create_matrix(A->rows - 1, A->columns - 1, &minor);
-  for (int k = 0; k < A->rows - 1; k++) {
-    for (int l = 0; l < A->columns - 1; l++) {
-      minor.matrix[k][l] = A->matrix[k < i ? k : k + 1][l < j ? l : l + 1];
+int matrix_minor(matrix_t *A, matrix_t *minor, int i, int j) {
+  if (A == NULL || minor == NULL) return ERROR_INCORRECT_MATRIX;
+
+  int resulting_code = OK;
+  resulting_code = s21_create_matrix(A->rows - 1, A->columns - 1, minor);
+  if (resulting_code == OK) {
+    for (int k = 0; k < A->rows - 1; k++) {
+      for (int l = 0; l < A->columns - 1; l++) {
+        minor->matrix[k][l] = A->matrix[k < i ? k : k + 1][l < j ? l : l + 1];
+      }
     }
   }
-  return minor;
+  return resulting_code;
 }
 
 /**
- * @brief Calculates the determinant of a matrix
+ * @brief Calculates the determinant of a matrix into the result
  *
  * @note Finds the determinant by Gauss elimination method.
- * At the first stage, the so-called direct move is carried out, when by means
- * of elementary transformations over the rows the system is reduced to a
- * stepped or triangular form, or it is established that the system is
- * incompatible. To do this, a non-zero is selected from the elements of the
- * first column of the matrix, the row containing it is moved to the uppermost
- * position, making this row the first. Then the non-zero elements of the first
- * column of all the underlying rows are zeroed by subtracting from each row the
- * first row multiplied by the ratio of the first element of these rows to the
- * first element of the first row. After the specified transformations have been
- * performed, the first row and the first column are mentally crossed out and
- * continued until a matrix of zero size remains. If at any of the iterations a
- * non-zero is not found among the elements of the first column, then they move
- * on to the next column and perform a similar operation. At the second stage,
- * the so-called reverse move is carried out, the essence of which is to express
- * all the resulting basic variables through non-basic ones and construct a
- * fundamental system of solutions, or, if all the variables are basic, then to
- * express in numerical form the only solution of the system of linear
- * equations. This procedure begins with the last equation, from which the
- * corresponding basic variable is expressed (and there is only one) and
- * substituted into the previous equations, and so on, moving up the "steps".
- * Each line corresponds to exactly one basic variable, therefore, at each step,
- * except for the last (the topmost), the situation exactly repeats the case of
- * the last line.
- *
- * source:
- * https://ru.wikipedia.org/wiki/%D0%9C%D0%B5%D1%82%D0%BE%D0%B4_%D0%93%D0%B0%D1%83%D1%81%D1%81%D0%B0
  *
  * @param A First matrix
  * @param result Resulting matrix
@@ -230,7 +230,92 @@ int s21_determinant(matrix_t *A, double *result) {
   if (A->rows != A->columns) return CALCULATION_ERROR;
 
   int resulting_code = OK;
-  double determinant = 0;
+  double determinant = 1;
+  matrix_t temp;
+  s21_create_matrix(A->rows, A->columns, &temp);
+}
+
+/**
+ * @brief Triangulates a matrix in place
+ *
+ * @note To "zero" the elements of the i-th column of the matrix, it is
+ * sufficient to add the i-th row multiplied by -a[j][i]/a[i][i] to all rows
+ * with numbers j = i+1, ... n.
+ *
+ * Example:
+ * {{10, 2, 3},
+ * {4, 5, 6},
+ * {7, 8, 9}}
+ *
+ * 0th column: j = 1; i = 0 => {4 - 10 * 4/10, 5 - 10 * 4/10, 6 - 10 * 4/10} =
+ * {0, 1, 2}
+ * j = 2; i = 0 => {7 - 10 * 7/10, 8 - 10 * 7/10, 9 - 10 * 7/10} =
+ * {0, 1, 2}
+ *
+ * {{10, 2, 3},
+ * {0, 1, 2},
+ * {0, 1, 2}}
+ *
+ * 1st column: j = 2; i = 1 => {0 - 0 * 1/1, 1 - 1 * 1/1, 2 - 2 * 1/1} =
+ * {0, 0, 0}
+ *
+ * {{10, 2, 3},
+ * {0, 1, 2},
+ * {0, 0, 0}}
+ *
+ * Then, the determinant equals 10 * 1 * 0 = 0
+ *
+ * When performing such an operation, division by
+ * zero may occur if the element on the main diagonal is equal to zero - in this
+ * case, the matrix rows are permuted.
+ *
+ * The most effective approach to permuting
+ * rows is to permutate the i-th row with the row that has the maximum element
+ * in the i-th column. It has been proven that when performing such a
+ * permutation for each row (and not only when a[i][i] is equal to zero) for a
+ * matrix with a non-zero determinant, we will always find a row for
+ * replacement.
+ *
+ * Source: https://pro-prof.com/forums/topic/matrix-triangulation
+ */
+int triangulation_in_place(matrix_t *A) {
+  if (A == NULL) return ERROR_INCORRECT_MATRIX;
+
+  int resulting_code = OK;
+  for (int i = 0; i < A->rows && resulting_code == OK; i++) {
+    permutation_of_rows_in_place(A, i);
+    for (int j = i + 1; j < A->columns && resulting_code == OK; j++) {
+      double multiplier = A->matrix[j][i] / A->matrix[i][i];
+      if (isinf(multiplier)) {
+        permutation_of_rows_in_place(A, i);
+      }
+      for (int k = i; k < A->columns && resulting_code == OK; k++) {
+        A->matrix[j][k] -= multiplier * A->matrix[i][k];
+      }
+    }
+  }
+  return resulting_code;
+}
+
+/**
+ * @brief Permutates the i-th row with the row that has the maximum element
+ * in the i-th column.
+ */
+void permutation_of_rows_in_place(matrix_t *A, int i) {
+  int max_index = i;
+  double max_element = A->matrix[i][i];
+  for (int j = i + 1; j < A->columns; j++) {
+    if (A->matrix[j][i] > max_element) {
+      max_element = A->matrix[j][i];
+      max_index = j;
+    }
+  }
+
+  if (max_index != i) {
+    double *temp = A->matrix[i];
+    A->matrix[i] = A->matrix[max_index];
+    A->matrix[max_index] = temp;
+  }
 }
 
 void null_out_matrix(matrix_t *A) {
