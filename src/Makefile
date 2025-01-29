@@ -2,7 +2,7 @@ OS := $(shell uname)
 
 # main vars
 AR = ar rcs
-LIBRARY = s21_decimal.a
+LIBRARY = s21_matrix.a
 
 # flags
 CC = gcc -Wall -Wextra -Werror -std=c11
