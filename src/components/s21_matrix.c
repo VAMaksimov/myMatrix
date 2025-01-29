@@ -174,6 +174,16 @@ int s21_transpose(matrix_t *A, matrix_t *result) {
  * The algebraic complement of a matrix element is the value of the minor
  * determinants multiplied by -1^(i+j).
  *
+ * Hierarchy of functions:
+ * s21_calc_complements() {
+ *   matrix_minor();
+ *   s21_determinant() {
+ *     triangulation_in_place() {
+ *       permutation_of_rows_in_place();
+ *     }
+ *   }
+ * }
+ *
  * @param A First matrix
  * @param result Resulting matrix
  *
